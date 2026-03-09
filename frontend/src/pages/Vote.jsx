@@ -9,7 +9,7 @@ import Card from '../components/Card';
 import { Vote, Lock } from 'lucide-react';
 
 const VotePage = () => {
-  const { user } = useContext(AuthContext);
+  const { user, refreshUser } = useContext(AuthContext);
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showFaceCapture, setShowFaceCapture] = useState(false);
@@ -63,6 +63,8 @@ const VotePage = () => {
       setShowFaceCapture(false);
       setMessage('Vote cast successfully!');
       fetchCandidates();
+      // Refresh user data to update hasVoted flag
+      refreshUser();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to cast vote.');
       setShowFaceCapture(false);
@@ -84,6 +86,23 @@ const VotePage = () => {
           <h2 className="text-2xl font-bold mb-2">Access Restricted</h2>
           <p className="text-gray-600">
             Administrators are not allowed to vote. You can manage the election from the admin dashboard.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  // Check if user has already voted
+  if (user?.hasVoted) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="p-8 text-center max-w-md">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Vote className="w-8 h-8 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Vote Already Cast</h2>
+          <p className="text-gray-600">
+            You have already cast your vote in this election. Each user is allowed to vote only once.
           </p>
         </Card>
       </div>

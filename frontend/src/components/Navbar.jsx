@@ -150,13 +150,6 @@ const Navbar = () => {
               </div>
             ) : (
               <div className="flex items-center space-x-3">
-                <Link
-                  to="/login"
-                  className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-secondary-600 hover:text-secondary-900 hover:bg-secondary-50 rounded-md transition-all duration-200"
-                >
-                  <User className="w-4 h-4" />
-                  <span>Login</span>
-                </Link>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}

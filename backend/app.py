@@ -4,6 +4,10 @@ from config import config
 import os
 from database.db import db_instance, get_db
 from services.otp_service import otp_service
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 def create_app(config_name=None):
     app = Flask(__name__)

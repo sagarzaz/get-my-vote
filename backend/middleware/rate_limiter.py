@@ -79,6 +79,6 @@ def rate_limit(limit=None, window=None):
     return decorator
 
 # Specific rate limits for different endpoints
-auth_rate_limit = rate_limit(limit=5, window=300)  # 5 requests per 5 minutes for auth
+auth_rate_limit = rate_limit(limit=20, window=300)  # 20 requests per 5 minutes for auth
 vote_rate_limit = rate_limit(limit=3, window=3600)  # 3 votes per hour
 general_rate_limit = rate_limit()  # Use default limits

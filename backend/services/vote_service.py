@@ -31,6 +31,13 @@ class VoteService:
                 print(f"[ERR] User has already voted: {user_id}")
                 return {'success': False, 'message': 'User has already voted'}
             
+            # Double-check: Check if user has already voted in votes collection
+            existing_vote = Vote.find_by_user_id(user_id)
+            if existing_vote:
+                print(f"[ERR] User has already voted (from votes collection): {user_id}")
+                User.update_has_voted(user_id)  # Sync the flag
+                return {'success': False, 'message': 'User has already voted'}
+            
             candidate = Candidate.find_by_id(candidate_id)
             if not candidate:
                 print(f"[ERR] Candidate not found: {candidate_id}")

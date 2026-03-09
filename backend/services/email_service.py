@@ -76,11 +76,11 @@ class EmailService:
                 response = sg.send(message)
                 
                 if response.status_code == 202:
-                    print(f"✅ OTP email sent via SendGrid to {to_email}")
+                    print(f"[OK] OTP email sent via SendGrid to {to_email}")
                     return True, "OTP sent successfully via SendGrid"
                     
             except Exception as e:
-                print(f"⚠️  SendGrid failed: {e}")
+                print(f"[WARN] SendGrid failed: {e}")
         
         # Fallback to Gmail SMTP
         if self.gmail_sender and self.gmail_password and self.gmail_password != 'your-email-password-here':
@@ -108,19 +108,19 @@ Get My Vote Team"""
                     server.login(self.gmail_sender, self.gmail_password)
                     server.sendmail(self.gmail_sender, to_email, msg.as_string())
                 
-                print(f"✅ OTP email sent via Gmail SMTP to {to_email}")
+                print(f"[OK] OTP email sent via Gmail SMTP to {to_email}")
                 return True, "OTP sent successfully via Gmail SMTP"
                 
             except smtplib.SMTPAuthenticationError:
-                print(f"❌ Gmail authentication failed. Please check EMAIL_SENDER and EMAIL_PASSWORD in .env file.")
-                print(f"🔢 OTP for {to_email}: {otp} (Email failed - check backend console)")
+                print(f"[ERR] Gmail authentication failed. Please check EMAIL_SENDER and EMAIL_PASSWORD in .env file.")
+                print(f"[OTP] OTP for {to_email}: {otp} (Email failed - check backend console)")
                 return True, "OTP generated but email failed - check console"
             except Exception as e:
-                print(f"❌ Gmail SMTP failed: {e}")
+                print(f"[ERR] Gmail SMTP failed: {e}")
         
         # Final fallback - console logging
-        print(f"🔢 OTP for {to_email}: {otp}")
-        print("⚠️  Email not configured - OTP displayed in console for testing")
+        print(f"[OTP] OTP for {to_email}: {otp}")
+        print("[WARN] Email not configured - OTP displayed in console for testing")
         return True, "OTP generated (email not configured - check server console)"
     
     def send_welcome_email(self, to_email: str) -> tuple[bool, str]:
@@ -153,11 +153,11 @@ Get My Vote Team"""
                 response = sg.send(message)
                 
                 if response.status_code == 202:
-                    print(f"✅ Welcome email sent via SendGrid to {to_email}")
+                    print(f"[OK] Welcome email sent via SendGrid to {to_email}")
                     return True, "Welcome email sent successfully"
                     
         except Exception as e:
-            print(f"⚠️  Welcome email failed: {e}")
+            print(f"[WARN] Welcome email failed: {e}")
         
         return True, "Welcome email skipped"
 

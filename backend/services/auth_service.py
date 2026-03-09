@@ -2,6 +2,7 @@ from models.user_model import User
 from utils.jwt_utils import generate_token
 from utils.password_utils import validate_password
 from services.otp_service import otp_service
+from services.face_service import FaceService
 from database.db import get_users_collection
 from bson import ObjectId
 from datetime import datetime, timezone
@@ -15,8 +16,11 @@ class AuthService:
     
     @staticmethod
     def validate_phone(phone):
-        pattern = r'^\d{10,15}$'
-        return re.match(pattern, phone) is not None
+        # Allow optional + prefix for country codes (e.g., +1, +91)
+        phone_digits = phone.lstrip('+')
+        if not phone_digits.isdigit():
+            return False
+        return 10 <= len(phone_digits) <= 15
     
     @staticmethod
     def sanitize_input(data):
@@ -28,6 +32,10 @@ class AuthService:
     
     @staticmethod
     def register_user(user_data):
+        """
+        Register user - stores data temporarily with pending status.
+        User is only created in database after OTP verification.
+        """
         try:
             print(f"[AUTH] Registration attempt for email: {user_data.get('email')}")
             user_data = AuthService.sanitize_input(user_data)
@@ -51,6 +59,7 @@ class AuthService:
                 print(f"[ERR] Invalid phone format: {phone}")
                 return {'success': False, 'message': 'Invalid phone number format'}
             
+            # Check if user already exists (either verified or pending)
             existing_user = User.find_by_email(email)
             if existing_user:
                 print(f"[ERR] User already exists: {email}")
@@ -61,35 +70,136 @@ class AuthService:
                 print(f"[ERR] Invalid password: {message}")
                 return {'success': False, 'message': message}
             
+            # Generate OTP first
             otp = otp_service.generate_otp(email, phone)
-            print(f"[INFO] Registration complete - OTP sent via email and SMS")
+            print(f"[INFO] OTP generated for verification")
             
-            new_user_data = {
+            # Store user data temporarily with pending status
+            # Use a separate 'pending_users' collection or add a flag
+            pending_user_data = {
                 'name': name,
                 'email': email,
                 'phone': phone,
                 'password_hash': User.hash_password(password),
                 'hasVoted': False,
                 'isVerified': False,
+                'isPending': True,  # Flag to indicate pending verification
                 'createdAt': datetime.now(timezone.utc),
-                'role': user_data.get('role', 'user')
+                'role': user_data.get('role', 'user'),
+                'otp': otp,  # Store OTP temporarily
+                'otp_created_at': datetime.now(timezone.utc),
+                'face_image': user_data.get('face_image')  # Store face image for registration
             }
             
-            collection = get_users_collection()
-            result = collection.insert_one(new_user_data)
+            # Try to insert into pending_users collection first
+            from database.db import get_db
+            db = get_db()
+            if db is None:
+                return {'success': False, 'message': 'Database connection failed'}
             
-            print(f"[OK] User registered successfully: {email}")
+            pending_collection = db['pending_users']
+            
+            # Check if pending user already exists
+            existing_pending = pending_collection.find_one({'email': email})
+            if existing_pending:
+                # Update existing pending user with new OTP
+                pending_collection.update_one(
+                    {'email': email},
+                    {'$set': {**pending_user_data, 'otp': otp, 'otp_created_at': datetime.now(timezone.utc)}}
+                )
+            else:
+                pending_collection.insert_one(pending_user_data)
+            
+            print(f"[OK] Pending user created: {email}")
             
             return {
                 'success': True,
-                'message': f'User registered successfully. Check terminal for OTP (development mode).',
-                'user_id': str(result.inserted_id),
-                'otp': otp
+                'message': f'Registration initiated. Please verify your account using the OTP sent to your email/phone.',
+                'user_id': None,  # No user_id yet since not verified
+                'otp': otp,
+                'pending': True
             }
             
         except Exception as e:
             print(f"[ERR] Registration error: {e}")
             return {'success': False, 'message': f'Registration failed: {str(e)}'}
+    
+    @staticmethod
+    def verify_and_create_user(email, otp):
+        """
+        Verify OTP and create actual user in database.
+        This is called during OTP verification.
+        """
+        try:
+            from database.db import get_db
+            db = get_db()
+            
+            if db is None:
+                return {'success': False, 'message': 'Database connection failed'}
+            
+            pending_collection = db['pending_users']
+            users_collection = db['users']
+            
+            # Find pending user
+            pending_user = pending_collection.find_one({'email': email, 'otp': otp})
+            
+            if not pending_user:
+                return {'success': False, 'message': 'Invalid OTP or pending registration not found'}
+            
+            # Check if OTP has expired (5 minutes)
+            otp_created = pending_user.get('otp_created_at')
+            if otp_created:
+                now = datetime.now(timezone.utc)
+                if otp_created.tzinfo is None:
+                    otp_created = otp_created.replace(tzinfo=timezone.utc)
+                
+                # Calculate expiry time
+                from datetime import timedelta
+                if now > otp_created + timedelta(minutes=5):
+                    return {'success': False, 'message': 'OTP has expired. Please register again.'}
+            
+            # Create the actual user
+            new_user_data = {
+                'name': pending_user['name'],
+                'email': pending_user['email'],
+                'phone': pending_user['phone'],
+                'password_hash': pending_user['password_hash'],
+                'hasVoted': False,
+                'isVerified': True,
+                'verifiedAt': datetime.now(timezone.utc),
+                'createdAt': pending_user['createdAt'],
+                'role': pending_user.get('role', 'user')
+            }
+            
+            # Insert into users collection
+            result = users_collection.insert_one(new_user_data)
+            new_user_id = str(result.inserted_id)
+            
+            # Register user's face if face_image was provided
+            face_image = pending_user.get('face_image')
+            if face_image:
+                print(f"[INFO] Registering face for new user: {new_user_id}")
+                face_service = FaceService()
+                face_result = face_service.register_user_face(new_user_id, face_image)
+                if face_result['success']:
+                    print(f"[OK] Face registered successfully for user: {new_user_id}")
+                else:
+                    print(f"[WARN] Face registration failed: {face_result.get('message')}")
+            
+            # Remove from pending collection
+            pending_collection.delete_one({'email': email})
+            
+            print(f"[OK] User verified and created: {email}")
+            
+            return {
+                'success': True,
+                'message': 'Account verified successfully!',
+                'user_id': str(result.inserted_id)
+            }
+            
+        except Exception as e:
+            print(f"[ERR] Verification error: {e}")
+            return {'success': False, 'message': f'Verification failed: {str(e)}'}
     
     @staticmethod
     def login_user(email, password):
@@ -174,6 +284,8 @@ class AuthService:
     
     @staticmethod
     def activate_user(email):
+        # This method is kept for backward compatibility
+        # Now handled by verify_and_create_user
         try:
             print(f"[OK] Activating user account: {email}")
             collection = get_users_collection()

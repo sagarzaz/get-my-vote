@@ -4,6 +4,7 @@ from services.otp_service import otp_service
 from utils.response_utils import success_response, error_response
 from utils.jwt_utils import token_required
 from middleware.rate_limiter import auth_rate_limit
+from datetime import datetime, timezone
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -103,20 +104,57 @@ def verify_otp():
         if not data.get('email') or not data.get('otp'):
             return error_response('Email and OTP are required')
         
-        is_valid, message = otp_service.verify_otp(data['email'], data['otp'])
+        email = data.get('email')
+        otp = data.get('otp')
         
-        if is_valid:
-            # Activate user account
-            activation_result = auth_service.activate_user(data['email'])
-            if activation_result['success']:
-                return success_response(message=f"Account activated successfully. You can now login.")
-            else:
-                return error_response(message=activation_result['message'])
+        # Verify OTP and create user (new flow)
+        result = auth_service.verify_and_create_user(email, otp)
+        
+        if result['success']:
+            return success_response(
+                message=result['message'],
+                data={'user_id': result.get('user_id')}
+            )
         else:
-            return error_response(message=message)
+            return error_response(message=result['message'])
             
     except Exception as e:
         return error_response(message=f'OTP verification failed: {str(e)}')
+
+@auth_bp.route('/resend-otp', methods=['POST'])
+@auth_rate_limit
+def resend_otp():
+    try:
+        data = request.get_json()
+        
+        if not data.get('email'):
+            return error_response('Email is required')
+        
+        email = data.get('email')
+        
+        # Generate new OTP
+        otp = otp_service.generate_otp(email)
+        
+        # Update pending user's OTP
+        from database.db import get_db
+        db = get_db()
+        if db:
+            pending_collection = db['pending_users']
+            result = pending_collection.update_one(
+                {'email': email},
+                {'$set': {'otp': otp, 'otp_created_at': datetime.now(timezone.utc)}}
+            )
+            
+            if result.modified_count == 0:
+                return error_response('No pending registration found. Please register again.')
+        
+        return success_response(
+            data={'otp': otp},
+            message=f'New OTP sent to {email}. Check backend console for OTP (development mode).'
+        )
+        
+    except Exception as e:
+        return error_response(message=f'Resend OTP failed: {str(e)}')
 
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():

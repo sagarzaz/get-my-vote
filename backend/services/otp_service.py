@@ -83,11 +83,11 @@ class OTPService:
                 to=phone
             )
             
-            print(f"✅ OTP SMS sent to {phone}: {message.sid}")
+            print(f"[OK] OTP SMS sent to {phone}: {message.sid}")
             return True, "OTP sent via SMS"
             
         except Exception as e:
-            print(f"❌ SMS failed: {e}")
+            print(f"[ERR] SMS failed: {e}")
             return False, f"SMS failed: {str(e)}"
     
     def verify_otp(self, email: str, otp: str) -> tuple[bool, str]:
